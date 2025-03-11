@@ -57,10 +57,8 @@ class ColorTracking:
         return (area_max_contour, contour_area_max) if contour_area_max > 300 else (None, 0)
 
     def target_color_fun(self, frame_lab): 
-        """Identifies the color with the largest detected area."""
-        max_area = 0
-        areaMaxContour_max = None
-        self.color_area_max = None
+        """Identifies and returns bounding boxes for all detected colors."""
+        detected_boxes = []
         
         if not self.start_pick_up:
             for color in color_range:
@@ -70,19 +68,15 @@ class ColorTracking:
                     processed_mask = cv2.morphologyEx(processed_mask, cv2.MORPH_CLOSE, np.ones((6, 6), np.uint8))
                     
                     contours = cv2.findContours(processed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[-2]
-                    areaMaxContour, area_max = self.getAreaMaxContour(contours)
                     
-                    if areaMaxContour is not None and area_max > max_area:
-                        max_area = area_max
-                        self.color_area_max = color
-                        areaMaxContour_max = areaMaxContour
-            
-            if max_area > 2500:
-                self.rect = cv2.minAreaRect(areaMaxContour_max)
-                box = np.int0(cv2.boxPoints(self.rect))
-                return True, box, max_area
+                    for contour in contours:
+                        area = cv2.contourArea(contour)
+                        if area > 300:
+                            rect = cv2.minAreaRect(contour)
+                            box = np.int0(cv2.boxPoints(rect))
+                            detected_boxes.append((color, box, area))
         
-        return False, None, None
+        return detected_boxes
 
     def find_distance(self): 
         """Tracks movement based on position changes."""
@@ -151,6 +145,56 @@ class ColorTracking:
         
         return img
     
+    def run2(self, img): 
+        """Processes the image frame to track multiple color objects simultaneously."""
+        img_copy = img.copy()
+        img_h, img_w = img.shape[:2]
+        cv2.line(img, (0, img_h // 2), (img_w, img_h // 2), (0, 0, 200), 1)
+        cv2.line(img, (img_w // 2, 0), (img_w // 2, img_h), (0, 0, 200), 1)
+        
+        if not self.__isRunning:
+            return img
+        
+        frame_resized = cv2.resize(img_copy, (640, 480), interpolation=cv2.INTER_NEAREST)
+        frame_blurred = cv2.GaussianBlur(frame_resized, (11, 11), 11)
+        
+        if self.get_roi and self.start_pick_up:
+            self.get_roi = False
+            frame_blurred = getMaskROI(frame_blurred, self.roi, (640, 480))
+        
+        frame_lab = cv2.cvtColor(frame_blurred, cv2.COLOR_BGR2LAB)
+        detected_boxes = self.target_color_fun(frame_lab)
+
+        # Reset tracking variables
+        self.track = False  
+
+        for color, box, area in detected_boxes:
+            if area > 2500:
+                self.track = True  # At least one object is detected
+                cv2.drawContours(img, [box], -1, self.range_rgb[color], 2)
+                img_centerx, img_centery = getCenter(cv2.minAreaRect(box), None, (640, 480), 10)
+                world_x, world_y = convertCoordinate(img_centerx, img_centery, (640, 480))
+
+                # Display the coordinates
+                cv2.putText(img, f'({world_x},{world_y})', (min(box[0, 0], box[2, 0]), box[2, 1] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.range_rgb[color], 1)
+                
+                # Compute movement tracking variables
+                self.distance = math.hypot(world_x - self.last_x, world_y - self.last_y)
+                self.last_x, self.last_y = world_x, world_y
+
+                # Time-based movement tracking
+                if self.action_finish:
+                    self.t1 = self.find_distance()
+                    self.time_fun()
+                else:
+                    self.t1 = time.time()
+                    self.start_count_t1 = True
+                    self.count = 0
+                    self.center_list = []
+
+        return img
+    
     def main(self): 
         my_camera = Camera.Camera()
         my_camera.camera_open()
@@ -159,7 +203,7 @@ class ColorTracking:
             img = my_camera.frame
             if img is not None:
                 frame = img.copy()
-                Frame = self.run(frame)   
+                Frame = self.run2(frame)   
                 cv2.imshow('Frame', Frame)
                 if cv2.waitKey(1) == 27:
                     break

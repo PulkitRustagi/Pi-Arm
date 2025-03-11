@@ -10,6 +10,7 @@ import numpy as np
 
 sys.path.append('/home/pi/ArmPi/')
 
+import Camera
 from LABConfig import *
 from ArmIK.Transform import *
 from ArmIK.ArmMoveIK import *
@@ -101,7 +102,7 @@ class Motion:
                         
                         if not self.__isRunning:
                             continue
-                        self.AK.setPitchRangeMoving((self.world_X, self.world_Y, 2), -90, -90, 0, 1000)
+                        self.AK.setPitchRangeMoving((self.world_X, self.world_Y, 1), -90, -90, 0, 1000)
                         time.sleep(2)
 
                         # Close gripper
@@ -167,21 +168,35 @@ class Motion:
                     time.sleep(1.5)
                 time.sleep(0.01)
 
-
-def run_motion():
-    """Starts the color tracking and motion control threads."""
-    motion = Motion()
-    color_tracking = ColorTracking()
+def main(): 
+    my_camera = Camera.Camera()
+    my_camera.camera_open()
     
+    # Initialize perception and motion
+    color_tracking = ColorTracking()
+    motion_class = Motion()
+    
+    # Start perception in a separate thread
     color_tracking_thread = threading.Thread(target=color_tracking.main, daemon=True)
     color_tracking_thread.start()
 
-    while True:
-        if color_tracking.detect_color != 'None':
-            motion.start_pick_up = True  
-            motion.move()
-            break  
-        time.sleep(0.1)
+    # Start motion in a separate thread
+    motion_thread = threading.Thread(target=motion_class.move, daemon=True)
+    motion_thread.start()
 
-if __name__ == '__main__':
-    run_motion()
+    while True:
+        img = my_camera.frame
+        if img is not None:
+            frame = img.copy()
+            Frame = color_tracking.run2(frame)  # Get detected bounding boxes
+            cv2.imshow('Frame', Frame)
+
+        if cv2.waitKey(1) == 27:
+            break  # Exit loop on 'ESC' key
+
+    # Clean up and stop everything
+    my_camera.camera_close()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()

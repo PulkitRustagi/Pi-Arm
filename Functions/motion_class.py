@@ -61,17 +61,10 @@ class Motion:
     def move_to_ready_position(self):
         """Move the arm to neutral ready position"""
         # Set gripper to partially open
-        Board.setBusServoPulse(self.gripper_servo_id, 
-                              self.gripper_closed_position - 50, 
-                              self.gripper_open_position)
         
-        # Reset wrist orientation
-        Board.setBusServoPulse(self.wrist_servo_id, 
-                              500, 
-                              500)
-        
-        # Move to home coordinates with -30° orientation
-        self.arm_controller.setPitchRangeMoving((0, 10, 10), -30, -30, -90, 1500)
+        Board.setBusServoPulse(1, 500 + 50, 300)
+        Board.setBusServoPulse(2, 500, 500)
+        AK.setPitchRangeMoving((0, 10, 10), -30, -30, -90, 1500)
         
         # Wait for motion to complete
         time.sleep(self.pause_duration)
@@ -104,13 +97,13 @@ class Motion:
                     gripper_angle = getAngle(target_x, target_y, target_orientation)
                     Board.setBusServoPulse(
                         self.gripper_servo_id, 
-                        self.gripper_closed_position - self.gripper_open_position, 
-                        self.gripper_closed_position
+                        350, 
+                        500
                     )
                     Board.setBusServoPulse(
                         self.wrist_servo_id, 
                         gripper_angle, 
-                        self.gripper_closed_position
+                        500
                     )
                     time.sleep(self.pause_duration)
 
@@ -124,16 +117,16 @@ class Motion:
                     # STEP 4: Close gripper to grab block
                     Board.setBusServoPulse(
                         self.gripper_servo_id, 
-                        self.gripper_closed_position, 
-                        self.gripper_closed_position
+                        650, 
+                        500
                     )
                     time.sleep(self.pause_duration)
 
                     # STEP 5: Reset wrist rotation and lift block
                     Board.setBusServoPulse(
                         self.wrist_servo_id, 
-                        self.gripper_closed_position, 
-                        self.gripper_closed_position
+                        500, 
+                        500
                     )
                     self.arm_controller.setPitchRangeMoving(
                         (target_x, target_y, self.approach_height), 
@@ -154,7 +147,7 @@ class Motion:
                     Board.setBusServoPulse(
                         self.wrist_servo_id, 
                         placement_angle, 
-                        self.gripper_closed_position
+                        500
                     )
                     time.sleep(self.pause_duration)
 
@@ -175,8 +168,8 @@ class Motion:
                     # STEP 10: Open gripper to release block
                     Board.setBusServoPulse(
                         self.gripper_servo_id, 
-                        self.gripper_closed_position - self.gripper_open_position, 
-                        self.gripper_closed_position
+                        300, 
+                        500
                     )
                     time.sleep(self.pause_duration)
 

@@ -37,7 +37,7 @@ class Motion:
         # Servo parameters
         self.gripper_servo_id = 1
         self.wrist_servo_id = 2
-        self.gripper_closed_position = 600
+        self.gripper_closed_position = 550
         self.gripper_open_position = 280
         
         # Motion planning parameters
@@ -67,8 +67,8 @@ class Motion:
         
         # Reset wrist orientation
         Board.setBusServoPulse(self.wrist_servo_id, 
-                              self.gripper_closed_position, 
-                              self.gripper_closed_position)
+                              500, 
+                              500)
         
         # Move to home coordinates with -30° orientation
         self.arm_controller.setPitchRangeMoving((0, 10, 10), -30, -30, -90, 1500)

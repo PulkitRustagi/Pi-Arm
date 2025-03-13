@@ -1,172 +1,198 @@
 #!/usr/bin/python3
 # coding=utf8
-
 import sys
 import cv2
-import time
-import threading
-import math
 import numpy as np
-
+import math
+import time
 sys.path.append('/home/pi/ArmPi/')
-
 import Camera
 from LABConfig import *
 from ArmIK.Transform import *
 from ArmIK.ArmMoveIK import *
-import HiwonderSDK.Board as Board
 from CameraCalibration.CalibrationConfig import *
 
-class ColorTracking:
-    def __init__(self): 
-        self.roi = ()
-        self.rect = []
-        self.count = 0
-        self.track = False 
-        self.get_roi = False
-        self.center_list = []
-        self.__isRunning = True
-        self.unreachable = False
-        self.detect_color = 'None'
-        self.action_finish = False
-        self.rotation_angle = 0
-        self.last_x, self.last_y = 0, 0
-        self.world_x, self.world_y = 0, 0
-        self.world_X, self.world_Y = 0, 0
-        self.start_count_t1 = True
-        self.t1 = 0
-        self.start_pick_up = False
-        self.first_move = True
-        self.AK = ArmIK()
-        self.__target_color = ('red', 'blue', 'green')
-        self.color_area_max = None
-        
-        # RGB color mapping
-        self.range_rgb = {
+class Perception:
+    def __init__(self):
+        # Color definitions
+        self.color_display_values = {
             'red': (0, 0, 255),
             'blue': (255, 0, 0),
             'green': (0, 255, 0),
             'black': (0, 0, 0),
-            'white': (255, 255, 255),
+            'white': (255, 255, 255)
         }
+        
+        # Target colors to detect
+        self.target_colors = ['red', 'green', 'blue']
+        
+        # Setup camera
+        self.camera = Camera.Camera()
+        self.camera.camera_open()
+        
+        # Image processing parameters
+        self.image_dimensions = (640, 480)
+        self.blur_kernel_size = (11, 11)
+        self.filter_kernel_size = (6, 6)
+        self.gaussian_std = 11
+        
+        # Object detection parameters
+        self.region_of_interest = ()
+        self.detected_contour = None
+        self.detected_contour_area = 0
+        self.detected_color = None
+        self.min_contour_area = 2500
+        
+        # Position tracking
+        self.object_x = 0
+        self.object_y = 0
+        self.color_code_map = {"red": 1, "green": 2, "blue": 3}
+        self.color_decode_map = {1: "red", 2: "green", 3: "blue"}
+        self.color_history = []
+        self.position_history = []
+        
+        # Timing and state variables
+        self.movement_threshold = 0.5
+        self.last_detection_time = time.time()
+        self.stability_time_required = 1.0
+        self.current_detected_color = "None"
+        self.display_color = self.color_display_values['black']
+        self.rotation_angle = 0
+        
+        # Import color ranges from configuration
+        self.color_range = color_range
 
-    def getAreaMaxContour(self, contours):
-        """Finds the largest contour based on area."""
-        area_max_contour = max(contours, key=cv2.contourArea, default=None)
-        contour_area_max = cv2.contourArea(area_max_contour) if area_max_contour is not None else 0
-        return (area_max_contour, contour_area_max) if contour_area_max > 300 else (None, 0)
-
-    def target_color_fun(self, frame_lab): 
-        """Identifies the color with the largest detected area."""
-        max_area = 0
-        areaMaxContour_max = None
-        self.color_area_max = None
-        
-        if not self.start_pick_up:
-            for color in color_range:
-                if color in self.__target_color:
-                    mask = cv2.inRange(frame_lab, color_range[color][0], color_range[color][1])
-                    processed_mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((6, 6), np.uint8))
-                    processed_mask = cv2.morphologyEx(processed_mask, cv2.MORPH_CLOSE, np.ones((6, 6), np.uint8))
-                    
-                    contours = cv2.findContours(processed_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[-2]
-                    areaMaxContour, area_max = self.getAreaMaxContour(contours)
-                    
-                    if areaMaxContour is not None and area_max > max_area:
-                        max_area = area_max
-                        self.color_area_max = color
-                        areaMaxContour_max = areaMaxContour
-            
-            if max_area > 2500:
-                self.rect = cv2.minAreaRect(areaMaxContour_max)
-                box = np.int0(cv2.boxPoints(self.rect))
-                return True, box, max_area
-        
-        return False, None, None
-
-    def find_distance(self): 
-        """Tracks movement based on position changes."""
-        if self.distance < 0.3:
-            self.center_list.append((self.world_x, self.world_y))
-            self.count += 1
-            if self.start_count_t1:
-                self.start_count_t1 = False
-                self.t1 = time.time()
-        return self.t1
-    
-    def time_fun(self):
-        """Updates position tracking after a delay."""
-        if time.time() - self.t1 > 1.5:
-            self.rotation_angle = self.rect[2]
-            self.start_count_t1 = True
-            self.world_X, self.world_Y = np.mean(np.array(self.center_list).reshape(self.count, 2), axis=0)
-            self.count = 0
-            self.center_list = []
-            self.start_pick_up = True
-    
-    def run(self, img): 
-        """Processes the image frame to track color objects."""
-        img_copy = img.copy()
-        img_h, img_w = img.shape[:2]
-        cv2.line(img, (0, img_h // 2), (img_w, img_h // 2), (0, 0, 200), 1)
-        cv2.line(img, (img_w // 2, 0), (img_w // 2, img_h), (0, 0, 200), 1)
-        
-        if not self.__isRunning:
-            return img
-        
-        frame_resized = cv2.resize(img_copy, (640, 480), interpolation=cv2.INTER_NEAREST)
-        frame_blurred = cv2.GaussianBlur(frame_resized, (11, 11), 11)
-        
-        if self.get_roi and self.start_pick_up:
-            self.get_roi = False
-            frame_blurred = getMaskROI(frame_blurred, self.roi, (640, 480))
-        
-        frame_lab = cv2.cvtColor(frame_blurred, cv2.COLOR_BGR2LAB)
-        found, box, area_max = self.target_color_fun(frame_lab)
-        if not found:
-            return img
-        
-        self.roi = getROI(box)
-        self.get_roi = True
-        img_centerx, img_centery = getCenter(self.rect, self.roi, (640, 480), 10)
-        self.world_x, self.world_y = convertCoordinate(img_centerx, img_centery, (640, 480))
-        
-        if area_max > 2500:
-            cv2.drawContours(img, [box], -1, self.range_rgb[self.color_area_max], 2)
-            cv2.putText(img, f'({self.world_x},{self.world_y})', (min(box[0, 0], box[2, 0]), box[2, 1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, self.range_rgb[self.color_area_max], 1)
-            
-            self.distance = math.hypot(self.world_x - self.last_x, self.world_y - self.last_y)
-            self.last_x, self.last_y = self.world_x, self.world_y
-            self.track = True
-            
-            if self.action_finish:
-                self.t1 = self.find_distance()
-                self.time_fun()
-            else:
-                self.t1 = time.time()
-                self.start_count_t1 = True
-                self.count = 0
-                self.center_list = []
-        
-        return img
-    
-    def main(self): 
-        my_camera = Camera.Camera()
-        my_camera.camera_open()
-
+    def find_objects(self):
+        """Main loop for object detection"""
         while True:
-            img = my_camera.frame
-            if img is not None:
-                frame = img.copy()
-                Frame = self.run(frame)   
-                cv2.imshow('Frame', Frame)
-                if cv2.waitKey(1) == 27:
-                    break
+            frame = self.camera.frame
 
-        my_camera.camera_close()
+            if frame is not None:
+                processed_frame = self.process_frame(frame)
+                cv2.imshow('Frame', processed_frame)
+                key = cv2.waitKey(1)
+                if key == 27:  # ESC key
+                    break
+            
+        self.camera.camera_close()
         cv2.destroyAllWindows()
 
-if __name__ == "__main__":
-    color_tracking = ColorTracking()
-    color_tracking.main()
+    def process_frame(self, frame):
+        """Process a single camera frame to detect objects"""
+        height, width = frame.shape[:2]
+
+        # Draw calibration crosshairs
+        cv2.line(frame, (0, int(height / 2)), (width, int(height / 2)), (0, 0, 200), 1)
+        cv2.line(frame, (int(width / 2), 0), (int(width / 2), height), (0, 0, 200), 1)
+
+        # Image preprocessing
+        resized_image = cv2.resize(frame, self.image_dimensions, interpolation=cv2.INTER_NEAREST)
+        blurred_image = cv2.GaussianBlur(resized_image, self.blur_kernel_size, self.gaussian_std)
+        
+        # Convert to LAB color space for better color detection
+        lab_image = cv2.cvtColor(blurred_image, cv2.COLOR_BGR2LAB)
+
+        # Find objects of interest
+        self.detect_color_objects(lab_image)
+
+        # Process detected object if large enough
+        if self.detected_contour_area > self.min_contour_area:
+            rect = cv2.minAreaRect(self.detected_contour)
+            box = np.int0(cv2.boxPoints(rect))
+
+            self.region_of_interest = getROI(box)
+            img_x, img_y = getCenter(rect, self.region_of_interest, self.image_dimensions, square_length)
+            world_x, world_y = convertCoordinate(img_x, img_y, self.image_dimensions)
+
+            # Draw contour and coordinates
+            cv2.drawContours(frame, [box], -1, self.color_display_values[self.detected_color], 2)
+            cv2.putText(frame, f'({world_x}, {world_y})', 
+                       (min(box[0, 0], box[2, 0]), box[2, 1] - 10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                       self.color_display_values[self.detected_color], 1) 
+
+            # Calculate movement distance
+            distance = math.sqrt((world_x - self.object_x)**2 + (world_y - self.object_y)**2)
+            self.object_x, self.object_y = world_x, world_y
+
+            # Record color detection
+            if self.detected_color in self.color_code_map:
+                color_code = self.color_code_map[self.detected_color]
+            else:
+                color_code = 0
+            
+            self.color_history.append(color_code)
+
+            # Process object stability
+            if distance < self.movement_threshold:
+                self.position_history.extend((world_x, world_y))
+                self.check_object_stability(rect)
+            else:
+                self.last_detection_time = time.time()
+                self.position_history = []
+            
+            # Determine consensus color after collecting enough samples
+            if len(self.color_history) == 3:
+                average_color_code = int(round(np.mean(np.array(self.color_history))))
+                
+                if average_color_code in self.color_decode_map:
+                    self.current_detected_color = self.color_decode_map[average_color_code]
+                    self.display_color = self.color_display_values[self.current_detected_color]
+                else:
+                    self.current_detected_color = 'None'
+                    self.display_color = self.color_display_values['black']
+                
+                self.color_history = []
+        else:
+            self.display_color = (0, 0, 0)
+            self.current_detected_color = "None"
+
+        # Display current detected color
+        cv2.putText(frame, f'Color: {self.current_detected_color}', 
+                   (10, height - 10), cv2.FONT_HERSHEY_SIMPLEX, 
+                   0.65, self.display_color, 2)
+        
+        return frame
+            
+    def check_object_stability(self, rect):
+        """Check if object has been stable for the required time"""
+        if time.time() - self.last_detection_time > self.stability_time_required:
+            self.rotation_angle = rect[2]
+            self.position_history = []
+            self.last_detection_time = time.time()
+
+    def detect_color_objects(self, lab_image):
+        """Detect objects of target colors"""
+        self.detected_contour = None
+        self.detected_contour_area = 0
+        self.detected_color = None
+        
+        for color in self.color_range:
+            if color in self.target_colors:
+                # Create mask for current color
+                color_mask = cv2.inRange(lab_image, 
+                                        self.color_range[color][0], 
+                                        self.color_range[color][1])
+                
+                # Clean up the mask
+                opened_mask = cv2.morphologyEx(color_mask, cv2.MORPH_OPEN, 
+                                              np.ones(self.filter_kernel_size, np.uint8))
+                cleaned_mask = cv2.morphologyEx(opened_mask, cv2.MORPH_CLOSE, 
+                                               np.ones(self.filter_kernel_size, np.uint8))
+                
+                # Find contours in the mask
+                contours = cv2.findContours(cleaned_mask, cv2.RETR_EXTERNAL, 
+                                           cv2.CHAIN_APPROX_NONE)[-2]
+
+                try:
+                    # Find largest contour
+                    largest_contour = max(contours, key=cv2.contourArea)
+                    largest_area = cv2.contourArea(largest_contour)
+
+                    # Update best contour if current is larger
+                    if largest_area > self.detected_contour_area:
+                        self.detected_contour_area = largest_area
+                        self.detected_contour = largest_contour
+                        self.detected_color = color
+                except:
+                    continue

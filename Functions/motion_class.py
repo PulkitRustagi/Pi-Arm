@@ -37,7 +37,7 @@ class Motion:
         # Servo parameters
         self.gripper_servo_id = 1
         self.wrist_servo_id = 2
-        self.gripper_closed_position = 500
+        self.gripper_closed_position = 550
         self.gripper_open_position = 280
         
         # Motion planning parameters

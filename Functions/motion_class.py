@@ -85,7 +85,7 @@ class Motion:
                 
                 # STEP 1: Move to position above block
                 move_result = self.arm_controller.setPitchRangeMoving(
-                    (target_x, target_y, self.approach_height), 
+                    (target_x, target_y-2, self.approach_height), 
                     -90, -90, 0
                 )  
 
@@ -109,7 +109,7 @@ class Motion:
 
                     # STEP 3: Lower arm to grasp position
                     self.arm_controller.setPitchRangeMoving(
-                        (target_x, target_y, self.grasp_height), 
+                        (target_x, target_y-2, self.grasp_height), 
                         -90, -90, 0, 1000
                     )
                     time.sleep(self.pause_duration)
@@ -129,7 +129,7 @@ class Motion:
                         500
                     )
                     self.arm_controller.setPitchRangeMoving(
-                        (target_x, target_y, self.approach_height), 
+                        (target_x, target_y, 1), 
                         -90, -90, 0, 1000
                     )
                     time.sleep(2*self.pause_duration)

@@ -62,9 +62,9 @@ class Motion:
         """Move the arm to neutral ready position"""
         # Set gripper to partially open
         
-        Board.setBusServoPulse(1, 500 + 50, 300)
+        Board.setBusServoPulse(1, 500 + 100, 300)
         Board.setBusServoPulse(2, 500, 500)
-        AK.setPitchRangeMoving((0, 10, 10), -30, -30, -90, 1500)
+        self.arm_controller.setPitchRangeMoving((0, 10, 10), -30, -30, -90, 1500)
         
         # Wait for motion to complete
         time.sleep(self.pause_duration)

@@ -12,7 +12,7 @@ from ArmIK.Transform import *
 from ArmIK.ArmMoveIK import *
 import HiwonderSDK.Board as Board
 from CameraCalibration.CalibrationConfig import *
-from new import Perception
+from perception_class import Perception
 
 class Motion:
     def __init__(self, perception):

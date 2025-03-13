@@ -18,9 +18,9 @@ class Motion:
     def __init__(self, perception):
         # Destination coordinates for sorted blocks (x, y, z)
         self.destination_positions = {
-            'red': (-14.5, 11.5, 1.5),
-            'green': (-14.5, 5.5, 1.5),
-            'blue': (-14.5, -0.5, 1.5)
+            'red':   (-15 + 0.5, 12 - 0.5, 1.5),
+            'green': (-15 + 0.5, 6 - 0.5,  1.5),
+            'blue':  (-15 + 0.5, 0 - 0.5,  1.5),
         }
         
         # Reference to perception system
@@ -37,7 +37,7 @@ class Motion:
         # Servo parameters
         self.gripper_servo_id = 1
         self.wrist_servo_id = 2
-        self.gripper_closed_position = 500
+        self.gripper_closed_position = 600
         self.gripper_open_position = 280
         
         # Motion planning parameters
